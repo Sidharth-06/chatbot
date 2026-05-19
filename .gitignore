@@ -1,0 +1,8 @@
+.env
+.streamlit/secrets.toml
+.chat_memory/
+.chat_memory_test/
+__pycache__/
+*.pyc
+.venv/
+chroma/
