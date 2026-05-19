@@ -1,334 +1,35 @@
-from __future__ import annotations
-
-import os
-import sys
-from pathlib import Path
-from uuid import uuid4
-
 import streamlit as st
-from dotenv import load_dotenv
-from openai import OpenAI, OpenAIError
-from openai.types.chat import ChatCompletionMessageParam
+from uuid import uuid4
+from openai import OpenAIError
 
-from memory_store import MemoryHit, PersistentMemoryStore, format_memory_hits, refresh_summary
-
-
-APP_DIR = Path(__file__).resolve().parent
-
-
-def load_app_env() -> None:
-    """Load .env from the app directory so Streamlit cwd does not matter."""
-    load_dotenv(APP_DIR / ".env")
-
-
-load_app_env()
-
-APP_TITLE = "AI Chatbot UI"
-DEFAULT_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
-DEFAULT_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-DEFAULT_MEMORY_DIR = os.getenv("MEMORY_PERSIST_DIR", ".chat_memory")
-DEFAULT_SYSTEM_PROMPT = (
-    "You are a helpful AI assistant. Be concise, friendly, and helpful. "
-    "Use relevant memory when available to provide better answers."
+from chatbot.config import (
+    APP_TITLE,
+    DEFAULT_MODEL,
+    DEFAULT_BASE_URL,
+    DEFAULT_MEMORY_DIR,
+    DEFAULT_SYSTEM_PROMPT,
+    APP_DIR,
+    secret_or_env,
+    is_streamlit_cloud,
+    api_key_is_configured
 )
-
+from chatbot.ui import apply_custom_css, render_chat_history
+from chatbot.api import get_openrouter_client, build_context_messages, generate_openrouter_response
+from chatbot.memory import PersistentMemoryStore, MemoryHit
 
 st.set_page_config(page_title=APP_TITLE, page_icon="✨", layout="wide")
-
-# Sleek minimal UI with purple/lavender accents
-st.markdown(
-    """
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-
-      html, body, [data-testid="stAppViewContainer"], [data-testid="stMainBlockContainer"] {
-        height: 100%;
-        background: linear-gradient(135deg, #f3e7ff 0%, #ede9fe 50%, #faf5ff 100%) !important;
-      }
-
-      .stApp {
-        background: linear-gradient(135deg, #f3e7ff 0%, #ede9fe 50%, #faf5ff 100%) !important;
-        color: #1a1a1a;
-      }
-
-      .block-container {
-        max-width: 100% !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-      }
-
-      /* Header Section */
-      [data-testid="stVerticalBlockBorderWrapper"]:first-child {
-        background: transparent !important;
-        border: none !important;
-        padding: 3rem 2rem 1.5rem !important;
-        flex-shrink: 0;
-      }
-
-      [data-testid="stVerticalBlockBorderWrapper"]:first-child h1 {
-        font-size: 48px !important;
-        font-weight: 700 !important;
-        margin: 0 !important;
-        color: #000 !important;
-        letter-spacing: -2px;
-      }
-
-      [data-testid="stVerticalBlockBorderWrapper"]:first-child p {
-        color: #666 !important;
-        font-size: 14px !important;
-        margin: 8px 0 0 0 !important;
-      }
-
-      /* Chat Messages */
-      [data-testid="stChatMessage"] {
-        background: transparent !important;
-        padding: 0 !important;
-        margin: 0.5rem 0 !important;
-      }
-
-      [data-testid="stChatMessage"] div:first-child {
-        display: none;
-      }
-
-      [data-testid="stChatMessageContent"] {
-        padding: 0 !important;
-        background: transparent !important;
-      }
-
-      .stChatMessage--user [data-testid="stChatMessageContent"] {
-        background: transparent !important;
-        color: #333 !important;
-        padding: 0 !important;
-        max-width: 100%;
-        margin-left: auto;
-        font-size: 14px;
-        line-height: 1.5;
-      }
-
-      .stChatMessage--assistant [data-testid="stChatMessageContent"] {
-        background: rgba(168, 85, 247, 0.08) !important;
-        color: #333 !important;
-        border-left: 3px solid #a855f7 !important;
-        padding: 1rem !important;
-        border-radius: 8px !important;
-        max-width: 100%;
-        font-size: 14px;
-        line-height: 1.6;
-      }
-
-      /* Chat Container */
-      .chat-container {
-        flex: 1;
-        overflow-y: auto;
-        padding: 2rem;
-      }
-
-      /* Input Area (hide Streamlit default chat input; we provide a custom input) */
-      [data-testid="stChatInputContainer"] {
-        display: none !important;
-      }
-
-      [data-testid="stChatInputContainer"] textarea {
-        background: white !important;
-        border: 1px solid #e9d5ff !important;
-        color: #333 !important;
-        border-radius: 24px !important;
-        font-size: 14px !important;
-        padding: 12px 16px !important;
-        transition: all 0.2s;
-      }
-
-      [data-testid="stChatInputContainer"] textarea::placeholder {
-        color: #999 !important;
-      }
-
-      [data-testid="stChatInputContainer"] textarea:focus {
-        border-color: #a855f7 !important;
-        box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.1) !important;
-      }
-
-      [data-testid="stChatInputContainer"] button {
-        background: transparent !important;
-        border: none !important;
-        color: #a855f7 !important;
-        font-size: 20px !important;
-        padding: 0 12px !important;
-        transition: all 0.2s;
-      }
-
-      [data-testid="stChatInputContainer"] button:hover {
-        transform: scale(1.1);
-        color: #9333ea !important;
-      }
-
-      /* Scrollbar */
-      ::-webkit-scrollbar {
-        width: 6px;
-      }
-
-      ::-webkit-scrollbar-track {
-        background: transparent;
-      }
-
-      ::-webkit-scrollbar-thumb {
-        background: rgba(168, 85, 247, 0.2);
-        border-radius: 3px;
-      }
-
-      ::-webkit-scrollbar-thumb:hover {
-        background: rgba(168, 85, 247, 0.4);
-      }
-
-      /* Info/Warning Messages */
-      .stInfo, .stWarning, .stError {
-        background: rgba(168, 85, 247, 0.08) !important;
-        border: 1px solid #e9d5ff !important;
-        border-radius: 8px !important;
-        color: #333 !important;
-      }
-
-      /* Remove extra padding */
-      .stMarkdown {
-        padding: 0 !important;
-      }
-
-      @media (max-width: 768px) {
-        [data-testid="stVerticalBlockBorderWrapper"]:first-child h1 {
-          font-size: 32px !important;
-        }
-      }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-def secret_or_env(section: str, key: str, env_key: str, default: str = "") -> str:
-    try:
-        section_data = st.secrets[section]
-    except Exception:
-        section_data = {}
-
-    if hasattr(section_data, "get"):
-        value = section_data.get(key)
-        if value is not None and str(value).strip():
-            return str(value).strip()
-
-    try:
-        flat_value = st.secrets[env_key]
-        if flat_value is not None and str(flat_value).strip():
-            return str(flat_value).strip()
-    except Exception:
-        pass
-
-    env_value = os.getenv(env_key)
-    if env_value is not None and str(env_value).strip():
-        return str(env_value).strip()
-
-    return default
-
-
-def is_streamlit_cloud() -> bool:
-    return os.getenv("STREAMLIT_CLOUD", "").lower() in {"1", "true", "yes"}
-
+apply_custom_css()
 
 def init_state() -> None:
     st.session_state.setdefault("session_id", uuid4().hex)
     st.session_state.setdefault("messages", [])
     st.session_state.setdefault("memory_summary", "")
     st.session_state.setdefault("system_prompt", DEFAULT_SYSTEM_PROMPT)
-  st.session_state.setdefault("ui_input", "")
-
+    st.session_state.setdefault("ui_input", "")
 
 @st.cache_resource(show_spinner="Loading memory store...")
 def get_memory_store(persist_dir: str) -> PersistentMemoryStore:
     return PersistentMemoryStore(persist_dir=persist_dir)
-
-
-def api_key_is_configured(api_key: str) -> bool:
-    cleaned = api_key.strip()
-    if not cleaned:
-        return False
-    lowered = cleaned.lower()
-    if lowered.startswith("your_") or lowered in {"changeme", "replace_me", "xxx"}:
-        return False
-    return True
-
-
-@st.cache_resource(show_spinner=False)
-def get_openrouter_client(api_key: str, base_url: str, app_name: str) -> OpenAI:
-    referer = secret_or_env(
-        "openrouter",
-        "http_referer",
-        "OPENROUTER_HTTP_REFERER",
-        "https://share.streamlit.io",
-    )
-    default_headers = {
-        "HTTP-Referer": referer,
-        "X-Title": app_name,
-    }
-    return OpenAI(api_key=api_key, base_url=base_url.rstrip("/"), default_headers=default_headers)
-
-
-def build_context_messages(
-    system_prompt: str,
-    memory_summary: str,
-    memory_hits: list[MemoryHit],
-    recent_messages: list[ChatCompletionMessageParam],
-    user_prompt: str,
-) -> list[ChatCompletionMessageParam]:
-    messages: list[ChatCompletionMessageParam] = [
-        {"role": "system", "content": system_prompt.strip()},
-    ]
-
-    memory_parts: list[str] = []
-    if memory_summary.strip():
-        memory_parts.append(f"Long-term memory summary:\n{memory_summary.strip()}")
-    if memory_hits:
-        memory_parts.append(f"Relevant retrieved memories:\n{format_memory_hits(memory_hits)}")
-    if memory_parts:
-        messages.append({"role": "system", "content": "\n\n".join(memory_parts)})
-
-    messages.extend(recent_messages)
-    messages.append({"role": "user", "content": user_prompt.strip()})
-    return messages
-
-
-def stream_openrouter_response(
-    client: OpenAI,
-    messages: list[ChatCompletionMessageParam],
-    model: str,
-    temperature: float = 0.7,
-    max_tokens: int = 1024,
-    top_p: float = 1.0,
-):
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        top_p=top_p,
-        stream=True,
-    )
-
-    for chunk in response:
-        delta = chunk.choices[0].delta.content if chunk.choices else None
-        if delta:
-            yield delta
-
-
-def render_chat_history(messages: list[dict[str, str]]) -> None:
-    for message in messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
 
 def main() -> None:
     init_state()
@@ -338,7 +39,10 @@ def main() -> None:
     model = secret_or_env("openrouter", "model", "OPENROUTER_MODEL", DEFAULT_MODEL)
     memory_dir = secret_or_env("memory", "persist_dir", "MEMORY_PERSIST_DIR", DEFAULT_MEMORY_DIR)
 
-    # Header
+    temperature = 0.7
+    max_tokens = 1024
+    top_p = 1.0
+
     st.title(APP_TITLE)
     st.caption("with loading animation")
 
@@ -350,10 +54,7 @@ def main() -> None:
                 "Settings → Secrets as either `[openrouter].api_key` or `OPENROUTER_API_KEY`, then reboot the app."
             )
             st.code(
-                """[openrouter]
-api_key = "sk-or-..."
-base_url = "https://openrouter.ai/api/v1"
-model = "openai/gpt-4o-mini""",
+                """[openrouter]\napi_key = "sk-or-..."\nbase_url = "https://openrouter.ai/api/v1"\nmodel = "openai/gpt-4o-mini""",
                 language="toml",
             )
         else:
@@ -369,7 +70,7 @@ model = "openai/gpt-4o-mini""",
         st.error(f"Could not initialize OpenRouter client: {exc}")
         st.stop()
 
-    memory_store: PersistentMemoryStore | None = None
+    memory_store = None
     try:
         memory_store = get_memory_store(memory_dir)
     except Exception as exc:
@@ -378,46 +79,54 @@ model = "openai/gpt-4o-mini""",
             f"Chat still works, but past messages will not be stored or retrieved."
         )
 
-    # Chat Container
+    def set_ui_input(value: str) -> None:
+        st.session_state["ui_input"] = value
+
+    def clear_chat_state() -> None:
+        st.session_state["messages"] = []
+        st.session_state["memory_summary"] = ""
+        st.session_state["summary_refreshes"] = 0
+        st.session_state["ui_input"] = ""
+
+    with st.sidebar:
+        st.button("🗑️ Clear chat", use_container_width=True, on_click=clear_chat_state)
+
     render_chat_history(st.session_state["messages"])
 
-    # Replace the standard `st.chat_input` with a styled text area + suggestion buttons
-    left_col, right_col = st.columns([3, 1], gap="small")
+    if not st.session_state["messages"]:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.button(
+                "💡 What can I do?",
+                use_container_width=True,
+                on_click=set_ui_input,
+                args=("What can I ask you to do?",),
+            )
+        with col2:
+            st.button(
+                "✈️ Plan a trip",
+                use_container_width=True,
+                on_click=set_ui_input,
+                args=("Plan a 2 day trip to Thailand",),
+            )
+        with col3:
+            st.button(
+                "📋 Project plan",
+                use_container_width=True,
+                on_click=set_ui_input,
+                args=("Give me a 3-step project plan",),
+            )
 
-    with left_col:
-      st.text_area(
-        "",
-        placeholder="Ask our AI anything about projects, plans, or code...",
-        height=96,
-        key="ui_input",
-      )
+    user_prompt = st.chat_input("Ask anything about projects, plans, or code...")
+    
+    if st.session_state.get("ui_input"):
+        user_prompt = st.session_state["ui_input"]
+        st.session_state["ui_input"] = ""
 
-      send = st.button("Send", key="send", use_container_width=True)
-      clear = st.button("Clear chat", key="clear", use_container_width=True)
-
-    with right_col:
-      if st.button("What can I ask you?", key="s1_small"):
-        st.session_state["ui_input"] = "What can I ask you to do?"
-      if st.button("Plan a trip", key="s2_small"):
-        st.session_state["ui_input"] = "Plan a 2 day trip to Thailand"
-      if st.button("Project plan", key="s3_small"):
-        st.session_state["ui_input"] = "Give me a 3-step project plan"
-
-    if clear:
-      st.session_state["messages"] = []
-      st.session_state["memory_summary"] = ""
-      st.session_state["summary_refreshes"] = 0
-      st.session_state["ui_input"] = ""
-      st.experimental_rerun()
-
-    user_prompt = st.session_state.get("ui_input", "").strip() if send else ""
     if user_prompt:
-      # Clear the input immediately for a snappy UX
-      st.session_state["ui_input"] = ""
-
       st.session_state["messages"].append({"role": "user", "content": user_prompt})
 
-      memory_hits: list[MemoryHit] = []
+      memory_hits = []
       memory_summary = st.session_state["memory_summary"]
       if memory_store is not None:
         memory_hits = memory_store.search(
@@ -435,26 +144,29 @@ model = "openai/gpt-4o-mini""",
         user_prompt,
       )
 
-      # Render the user message (already appended to history) and stream the assistant response
-      with st.chat_message("user"):
+      with st.chat_message("user", avatar="👤"):
         st.markdown(user_prompt)
 
-      with st.chat_message("assistant"):
+      with st.chat_message("assistant", avatar="✨"):
         placeholder = st.empty()
-        assistant_text = ""
-        try:
-          for delta in stream_openrouter_response(
-            client=client, messages=context_messages, model=model.strip(), temperature=temperature, max_tokens=max_tokens, top_p=top_p
-          ):
-            assistant_text += str(delta)
-            # progressively update assistant content
-            placeholder.markdown(assistant_text)
-        except OpenAIError as exc:
-          st.error(f"OpenRouter request failed: {exc}")
-          st.stop()
+        with st.spinner("Thinking..."):
+            try:
+              message_obj = generate_openrouter_response(
+                client=client, messages=context_messages, model=model.strip(), temperature=temperature, max_tokens=max_tokens, top_p=top_p
+              )
+              assistant_text = message_obj.content or ""
+              placeholder.markdown(assistant_text)
+            except OpenAIError as exc:
+              st.error(f"OpenRouter request failed: {exc}")
+              st.stop()
 
-      # Save the assistant's final text into the session history
-      st.session_state["messages"].append({"role": "assistant", "content": assistant_text})
+      assistant_message = {"role": "assistant", "content": assistant_text}
+      if 'message_obj' in locals() and hasattr(message_obj, "reasoning_details") and message_obj.reasoning_details:
+          assistant_message["reasoning_details"] = message_obj.reasoning_details
+          with st.expander("Reasoning Details"):
+              st.json(message_obj.reasoning_details)
+          
+      st.session_state["messages"].append(assistant_message)
 
       if memory_store is not None:
         user_turn_count = sum(1 for msg in st.session_state["messages"] if msg["role"] == "user")
@@ -462,6 +174,7 @@ model = "openai/gpt-4o-mini""",
         memory_store.add_message(st.session_state["session_id"], "assistant", assistant_text, user_turn_count)
 
         if user_turn_count % 3 == 0:
+          from chatbot.memory import refresh_summary
           try:
             refreshed_summary = refresh_summary(
               client=client,
@@ -474,7 +187,6 @@ model = "openai/gpt-4o-mini""",
               memory_store.store_summary(st.session_state["session_id"], refreshed_summary)
           except OpenAIError:
             pass
-
 
 if __name__ == "__main__":
     main()
