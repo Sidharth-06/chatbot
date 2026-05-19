@@ -392,7 +392,7 @@ model = "openai/gpt-4o-mini""",
         value=st.session_state.get("ui_input", ""),
         placeholder="Ask our AI anything about projects, plans, or code...",
         height=96,
-        key="ui_text",
+        key="ui_input",
       )
 
       send = st.button("Send", key="send", use_container_width=True)
