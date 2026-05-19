@@ -84,6 +84,10 @@ def secret_or_env(section: str, key: str, env_key: str, default: str = "") -> st
     return default
 
 
+def is_streamlit_cloud() -> bool:
+    return os.getenv("STREAMLIT_CLOUD", "").lower() in {"1", "true", "yes"}
+
+
 def init_state() -> None:
     st.session_state.setdefault("session_id", uuid4().hex)
     st.session_state.setdefault("messages", [])
@@ -220,10 +224,23 @@ def main() -> None:
 
     env_path = APP_DIR / ".env"
     if not api_key_is_configured(api_key):
-        st.error(
-            "OpenRouter API key is missing or still a placeholder. Add a real `OPENROUTER_API_KEY=sk-or-...` to "
-            f"`{env_path}` (copy from `.env.example`) or set it in `.streamlit/secrets.toml`, then restart Streamlit."
-        )
+        if is_streamlit_cloud():
+            st.error(
+                "OpenRouter API key is missing or still a placeholder. Add it in Streamlit Cloud "
+                "Settings → Secrets as either `[openrouter].api_key` or `OPENROUTER_API_KEY`, then reboot the app."
+            )
+            st.code(
+                """[openrouter]
+api_key = "sk-or-..."
+base_url = "https://openrouter.ai/api/v1"
+model = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free""",
+                language="toml",
+            )
+        else:
+            st.error(
+                "OpenRouter API key is missing or still a placeholder. Add a real `OPENROUTER_API_KEY=sk-or-...` to "
+                f"`{env_path}` (copy from `.env.example`) or set it in `.streamlit/secrets.toml`, then restart Streamlit."
+            )
         st.stop()
 
     try:
