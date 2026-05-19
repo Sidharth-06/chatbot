@@ -23,19 +23,19 @@ def load_app_env() -> None:
 
 load_app_env()
 
-APP_TITLE = "Allen - ChatBot with Memory"
+APP_TITLE = "AI Chatbot UI"
 DEFAULT_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 DEFAULT_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 DEFAULT_MEMORY_DIR = os.getenv("MEMORY_PERSIST_DIR", ".chat_memory")
 DEFAULT_SYSTEM_PROMPT = (
-    "You are a helpful chatbot. Use relevant long-term memory when it helps answer the user. "
-    "Prefer concise answers, ask clarifying questions when needed, and do not invent facts from memory."
+    "You are a helpful AI assistant. Be concise, friendly, and helpful. "
+    "Use relevant memory when available to provide better answers."
 )
 
 
-st.set_page_config(page_title=APP_TITLE, page_icon="💬", layout="wide")
+st.set_page_config(page_title=APP_TITLE, page_icon="✨", layout="wide")
 
-# Sleek React-style CSS
+# Sleek minimal UI with purple/lavender accents
 st.markdown(
     """
     <style>
@@ -47,12 +47,12 @@ st.markdown(
 
       html, body, [data-testid="stAppViewContainer"], [data-testid="stMainBlockContainer"] {
         height: 100%;
-        background: linear-gradient(135deg, #0f172a 0%, #1a2a4a 50%, #0f1729 100%) !important;
+        background: linear-gradient(135deg, #f3e7ff 0%, #ede9fe 50%, #faf5ff 100%) !important;
       }
 
       .stApp {
-        background: linear-gradient(135deg, #0f172a 0%, #1a2a4a 50%, #0f1729 100%) !important;
-        color: #e2e8f0;
+        background: linear-gradient(135deg, #f3e7ff 0%, #ede9fe 50%, #faf5ff 100%) !important;
+        color: #1a1a1a;
       }
 
       .block-container {
@@ -64,86 +64,33 @@ st.markdown(
         height: 100vh;
       }
 
-      /* Typography */
-      h1, h2, h3 {
-        color: #e2e8f0 !important;
-      }
-
-      p, span, label {
-        color: #cbd5e1 !important;
-      }
-
       /* Header Section */
       [data-testid="stVerticalBlockBorderWrapper"]:first-child {
-        background: rgba(15, 23, 42, 0.5) !important;
-        backdrop-filter: blur(12px);
-        border-bottom: 1px solid rgba(148, 163, 184, 0.1) !important;
-        padding: 1.5rem 2rem !important;
+        background: transparent !important;
+        border: none !important;
+        padding: 3rem 2rem 1.5rem !important;
         flex-shrink: 0;
-        position: relative;
       }
 
       [data-testid="stVerticalBlockBorderWrapper"]:first-child h1 {
-        background: linear-gradient(135deg, #60a5fa, #a78bfa);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        font-size: 24px !important;
+        font-size: 48px !important;
         font-weight: 700 !important;
-        margin: 0 0 4px 0 !important;
-        letter-spacing: -0.5px;
+        margin: 0 !important;
+        color: #000 !important;
+        letter-spacing: -2px;
       }
 
       [data-testid="stVerticalBlockBorderWrapper"]:first-child p {
-        color: #94a3b8 !important;
-        font-size: 13px !important;
-        margin: 0 !important;
-      }
-
-      /* Control Sliders and Inputs */
-      .stSlider {
-        background: transparent !important;
-      }
-
-      .stSlider [data-testid="stNumberInput"] {
-        display: none;
-      }
-
-      .stSlider label {
-        font-size: 13px !important;
-        color: #94a3b8 !important;
-      }
-
-      .stSlider > div > div > div:nth-child(2) > div {
-        background: rgba(30, 41, 59, 0.6) !important;
-        border-radius: 8px !important;
-        border: 1px solid rgba(148, 163, 184, 0.15) !important;
-      }
-
-      input[type="range"] {
-        width: 100% !important;
-        accent-color: #60a5fa !important;
-      }
-
-      .stCheckbox label {
-        font-size: 13px !important;
-        color: #94a3b8 !important;
-      }
-
-      input[type="checkbox"] {
-        accent-color: #60a5fa !important;
-      }
-
-      /* Columns for controls */
-      [data-testid="column"] {
-        background: transparent !important;
+        color: #666 !important;
+        font-size: 14px !important;
+        margin: 8px 0 0 0 !important;
       }
 
       /* Chat Messages */
       [data-testid="stChatMessage"] {
         background: transparent !important;
         padding: 0 !important;
-        margin: 0 !important;
+        margin: 0.5rem 0 !important;
       }
 
       [data-testid="stChatMessage"] div:first-child {
@@ -156,121 +103,72 @@ st.markdown(
       }
 
       .stChatMessage--user [data-testid="stChatMessageContent"] {
-        background: linear-gradient(135deg, rgba(96, 165, 250, 0.8), rgba(167, 139, 250, 0.8)) !important;
-        color: #f8fafc !important;
-        padding: 0.875rem 1.125rem !important;
-        border-radius: 12px 4px 12px 12px !important;
-        max-width: 70%;
+        background: transparent !important;
+        color: #333 !important;
+        padding: 0 !important;
+        max-width: 100%;
         margin-left: auto;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .stChatMessage--assistant [data-testid="stChatMessageContent"] {
+        background: rgba(168, 85, 247, 0.08) !important;
+        color: #333 !important;
+        border-left: 3px solid #a855f7 !important;
+        padding: 1rem !important;
+        border-radius: 8px !important;
+        max-width: 100%;
         font-size: 14px;
         line-height: 1.6;
       }
 
-      .stChatMessage--assistant [data-testid="stChatMessageContent"] {
-        background: rgba(30, 41, 59, 0.8) !important;
-        color: #cbd5e1 !important;
-        border: 1px solid rgba(148, 163, 184, 0.15) !important;
-        padding: 0.875rem 1.125rem !important;
-        border-radius: 12px 12px 12px 4px !important;
-        max-width: 70%;
-        font-size: 14px;
-        line-height: 1.6;
+      /* Chat Container */
+      .chat-container {
+        flex: 1;
+        overflow-y: auto;
+        padding: 2rem;
       }
 
       /* Input Area */
       [data-testid="stChatInputContainer"] {
-        background: rgba(15, 23, 42, 0.5) !important;
-        backdrop-filter: blur(12px);
-        border-top: 1px solid rgba(148, 163, 184, 0.1) !important;
-        padding: 1rem 2rem 1.5rem !important;
+        background: transparent !important;
+        border-top: none !important;
+        padding: 1.5rem 2rem 2rem !important;
         flex-shrink: 0;
       }
 
       [data-testid="stChatInputContainer"] textarea {
-        background: rgba(30, 41, 59, 0.6) !important;
-        border: 1px solid rgba(148, 163, 184, 0.15) !important;
-        color: #e2e8f0 !important;
-        border-radius: 10px !important;
+        background: white !important;
+        border: 1px solid #e9d5ff !important;
+        color: #333 !important;
+        border-radius: 24px !important;
         font-size: 14px !important;
+        padding: 12px 16px !important;
         transition: all 0.2s;
+      }
+
+      [data-testid="stChatInputContainer"] textarea::placeholder {
+        color: #999 !important;
       }
 
       [data-testid="stChatInputContainer"] textarea:focus {
-        background: rgba(30, 41, 59, 0.8) !important;
-        border-color: rgba(96, 165, 250, 0.3) !important;
-        box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.1) !important;
+        border-color: #a855f7 !important;
+        box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.1) !important;
       }
 
       [data-testid="stChatInputContainer"] button {
-        background: linear-gradient(135deg, rgba(96, 165, 250, 0.9), rgba(167, 139, 250, 0.9)) !important;
+        background: transparent !important;
         border: none !important;
-        color: #f8fafc !important;
-        border-radius: 10px !important;
+        color: #a855f7 !important;
+        font-size: 20px !important;
+        padding: 0 12px !important;
         transition: all 0.2s;
-        font-weight: 600;
       }
 
       [data-testid="stChatInputContainer"] button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 16px rgba(96, 165, 250, 0.2) !important;
-      }
-
-      [data-testid="stChatInputContainer"] button:disabled {
-        opacity: 0.4 !important;
-        cursor: not-allowed !important;
-      }
-
-      /* Buttons */
-      .stButton > button {
-        background: rgba(148, 163, 184, 0.1) !important;
-        border: 1px solid rgba(148, 163, 184, 0.15) !important;
-        color: #cbd5e1 !important;
-        border-radius: 8px !important;
-        transition: all 0.2s;
-        width: 100% !important;
-      }
-
-      .stButton > button:hover {
-        background: rgba(148, 163, 184, 0.15) !important;
-        border-color: rgba(148, 163, 184, 0.25) !important;
-      }
-
-      /* Expander */
-      .streamlit-expanderHeader {
-        background: rgba(30, 41, 59, 0.4) !important;
-        border: 1px solid rgba(148, 163, 184, 0.08) !important;
-        border-radius: 8px !important;
-        color: #cbd5e1 !important;
-      }
-
-      .streamlit-expanderHeader:hover {
-        background: rgba(30, 41, 59, 0.6) !important;
-      }
-
-      .streamlit-expanderContent {
-        background: transparent !important;
-        border: none !important;
-      }
-
-      /* Text Area */
-      .stTextArea textarea {
-        background: rgba(30, 41, 59, 0.6) !important;
-        border: 1px solid rgba(148, 163, 184, 0.15) !important;
-        color: #e2e8f0 !important;
-        border-radius: 8px !important;
-      }
-
-      .stTextArea textarea:focus {
-        border-color: rgba(96, 165, 250, 0.3) !important;
-        box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.1) !important;
-      }
-
-      /* Info/Warning Messages */
-      .stInfo, .stWarning, .stError {
-        background: rgba(30, 41, 59, 0.6) !important;
-        border: 1px solid rgba(96, 165, 250, 0.15) !important;
-        border-radius: 8px !important;
-        color: #cbd5e1 !important;
+        transform: scale(1.1);
+        color: #9333ea !important;
       }
 
       /* Scrollbar */
@@ -283,35 +181,30 @@ st.markdown(
       }
 
       ::-webkit-scrollbar-thumb {
-        background: rgba(148, 163, 184, 0.2);
+        background: rgba(168, 85, 247, 0.2);
         border-radius: 3px;
       }
 
       ::-webkit-scrollbar-thumb:hover {
-        background: rgba(148, 163, 184, 0.4);
+        background: rgba(168, 85, 247, 0.4);
       }
 
-      /* Animations */
-      @keyframes slideIn {
-        from {
-          opacity: 0;
-          transform: translateY(8px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+      /* Info/Warning Messages */
+      .stInfo, .stWarning, .stError {
+        background: rgba(168, 85, 247, 0.08) !important;
+        border: 1px solid #e9d5ff !important;
+        border-radius: 8px !important;
+        color: #333 !important;
       }
 
-      [data-testid="stChatMessage"] {
-        animation: slideIn 0.3s ease-out;
+      /* Remove extra padding */
+      .stMarkdown {
+        padding: 0 !important;
       }
 
-      /* Responsive */
       @media (max-width: 768px) {
-        .stChatMessage--user [data-testid="stChatMessageContent"],
-        .stChatMessage--assistant [data-testid="stChatMessageContent"] {
-          max-width: 90%;
+        [data-testid="stVerticalBlockBorderWrapper"]:first-child h1 {
+          font-size: 32px !important;
         }
       }
     </style>
@@ -353,7 +246,6 @@ def init_state() -> None:
     st.session_state.setdefault("session_id", uuid4().hex)
     st.session_state.setdefault("messages", [])
     st.session_state.setdefault("memory_summary", "")
-    st.session_state.setdefault("summary_refreshes", 0)
     st.session_state.setdefault("system_prompt", DEFAULT_SYSTEM_PROMPT)
 
 
@@ -415,9 +307,9 @@ def stream_openrouter_response(
     client: OpenAI,
     messages: list[ChatCompletionMessageParam],
     model: str,
-    temperature: float,
-    max_tokens: int,
-    top_p: float,
+    temperature: float = 0.7,
+    max_tokens: int = 1024,
+    top_p: float = 1.0,
 ):
     response = client.chat.completions.create(
         model=model,
@@ -450,75 +342,7 @@ def main() -> None:
 
     # Header
     st.title(APP_TITLE)
-    st.caption("Chat with OpenRouter models and keep durable memory in a local persistent store.")
-
-    # Sleek Hero layout: large title at left, chat card at right
-    left, right = st.columns([1.6, 2.4], gap="large")
-
-    with left:
-      st.markdown("""
-      <div style="padding:28px 12px 8px 12px">
-        <h1 style="font-size:48px; margin-bottom:6px;">
-        AI Chatbot UI
-        </h1>
-        <div style="display:inline-block;padding:8px 14px;border-radius:999px;background:#fff;color:#0f172a;font-weight:600;box-shadow:0 8px 24px rgba(16,24,40,0.45)">
-        with loading animation
-        </div>
-        <p style="color:rgba(226,232,240,0.9); margin-top:18px; max-width:520px">Ask our AI anything. Durable memory and thoughtful replies, configured from environment or Streamlit Secrets.</p>
-      </div>
-      """, unsafe_allow_html=True)
-
-    # Defaults (kept hidden from UI; configure via env/secrets)
-    memory_limit = 5
-    recent_turns = 4
-    temperature = 0.5
-    top_p = 1.0
-    max_tokens = 1024
-    session_only_memory = False
-
-    # Chat card on the right
-    with right:
-      st.markdown(
-        """
-        <div style='background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:22px;border-radius:18px;box-shadow:0 24px 60px rgba(2,6,23,0.6);'>
-          <div style='min-height:260px; display:flex; flex-direction:column; justify-content:flex-start;'>
-          <div style='color:#94a3b8; font-size:13px; margin-bottom:12px;'>Ask our AI anything</div>
-          <div style='flex:1; border-radius:12px; padding:12px; background:rgba(15,23,42,0.35); display:flex; align-items:center; justify-content:center; color:#94a3b8;'>
-            <div style='text-align:center; opacity:0.6'>Suggestions and quick actions live here</div>
-          </div>
-          <div style='margin-top:12px; display:flex; gap:8px;'>
-            <button data-suggest='What can I ask you to do?' style='padding:10px 12px;border-radius:10px;border:none;background:#0ea5e9;color:#fff;cursor:pointer'>What can I ask you to do?</button>
-            <button data-suggest='Plan a 2 day trip to Thailand' style='padding:10px 12px;border-radius:10px;border:none;background:#a78bfa;color:#fff;cursor:pointer'>Plan a Thailand trip</button>
-            <button data-suggest='Give me a 3-step project plan' style='padding:10px 12px;border-radius:10px;border:none;background:#60a5fa;color:#fff;cursor:pointer'>Project plan</button>
-          </div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-      )
-
-      # Provide a simple text area and send button that feeds the chat logic
-      if "user_input" not in st.session_state:
-        st.session_state["user_input"] = ""
-
-      # Suggestion buttons use JS-less fallback: render as Streamlit buttons beneath card
-      sug1, sug2, sug3 = st.columns([1,1,1])
-      with sug1:
-        if st.button("What can I ask you to do?", key="s1"):
-          st.session_state["user_input"] = "What can I ask you to do?"
-      with sug2:
-        if st.button("Plan a Thailand trip", key="s2"):
-          st.session_state["user_input"] = "Plan a Thailand trip for 2 days"
-      with sug3:
-        if st.button("Project plan", key="s3"):
-          st.session_state["user_input"] = "Give me a 3-step project plan"
-
-      st.session_state["user_input"] = st.text_area("", value=st.session_state.get("user_input", ""), placeholder="Ask me anything about your projects or plans...", key="ui_input", height=90)
-      if st.button("Send", key="send", use_container_width=True):
-        user_prompt = st.session_state.get("user_input", "").strip()
-        st.session_state["user_input"] = ""
-      else:
-        user_prompt = ""
+    st.caption("with loading animation")
 
     env_path = APP_DIR / ".env"
     if not api_key_is_configured(api_key):
@@ -531,7 +355,7 @@ def main() -> None:
                 """[openrouter]
 api_key = "sk-or-..."
 base_url = "https://openrouter.ai/api/v1"
-model = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free""",
+model = "openai/gpt-4o-mini""",
                 language="toml",
             )
         else:
@@ -553,91 +377,109 @@ model = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free""",
     except Exception as exc:
         st.warning(
             "Long-term memory is disabled for this session. "
-            f"Chat still works, but past messages will not be stored or retrieved. ({exc})"
+            f"Chat still works, but past messages will not be stored or retrieved."
         )
-
-    if memory_store is not None:
-        st.caption(f"Memory items stored: {memory_store.count():,}")
-
-    if not st.session_state["messages"]:
-        st.info("Ask a question below to start chatting.")
 
     # Chat Container
     render_chat_history(st.session_state["messages"])
 
-    user_prompt = st.chat_input("Ask something... (Shift+Enter for new line)")
+    # Replace the standard `st.chat_input` with a styled text area + suggestion buttons
+    if "ui_input" not in st.session_state:
+      st.session_state["ui_input"] = ""
+
+    left_col, right_col = st.columns([3, 1], gap="small")
+
+    with left_col:
+      st.session_state["ui_input"] = st.text_area(
+        "",
+        value=st.session_state.get("ui_input", ""),
+        placeholder="Ask our AI anything about projects, plans, or code...",
+        height=96,
+        key="ui_text",
+      )
+
+      send = st.button("Send", key="send", use_container_width=True)
+      clear = st.button("Clear chat", key="clear", use_container_width=True)
+
+    with right_col:
+      if st.button("What can I ask you?", key="s1_small"):
+        st.session_state["ui_input"] = "What can I ask you to do?"
+      if st.button("Plan a trip", key="s2_small"):
+        st.session_state["ui_input"] = "Plan a 2 day trip to Thailand"
+      if st.button("Project plan", key="s3_small"):
+        st.session_state["ui_input"] = "Give me a 3-step project plan"
+
+    if clear:
+      st.session_state["messages"] = []
+      st.session_state["memory_summary"] = ""
+      st.session_state["summary_refreshes"] = 0
+      st.session_state["ui_input"] = ""
+      st.experimental_rerun()
+
+    user_prompt = st.session_state.get("ui_input", "").strip() if send else ""
     if user_prompt:
-        st.session_state["messages"].append({"role": "user", "content": user_prompt})
-        user_turn_count = sum(1 for message in st.session_state["messages"] if message["role"] == "user")
-        recent_message_count = max(recent_turns * 2, 1)
-        recent_history = st.session_state["messages"][:-1][-recent_message_count:]
+      # Clear the input immediately for a snappy UX
+      st.session_state["ui_input"] = ""
 
-        memory_hits: list[MemoryHit] = []
-        memory_summary = st.session_state["memory_summary"]
-        if memory_store is not None:
-            memory_hits = memory_store.search(
-                user_prompt,
-                limit=memory_limit,
-                session_id=st.session_state["session_id"] if session_only_memory else None,
-            )
-            memory_summary = memory_summary or memory_store.load_summary(st.session_state["session_id"])
-        context_messages = build_context_messages(
-            st.session_state["system_prompt"],
-            memory_summary,
-            memory_hits,
-            recent_history,
-            user_prompt,
+      st.session_state["messages"].append({"role": "user", "content": user_prompt})
+
+      memory_hits: list[MemoryHit] = []
+      memory_summary = st.session_state["memory_summary"]
+      if memory_store is not None:
+        memory_hits = memory_store.search(
+          user_prompt,
+          limit=5,
+          session_id=st.session_state["session_id"],
         )
+        memory_summary = memory_summary or memory_store.load_summary(st.session_state["session_id"])
 
-        with st.chat_message("user"):
-            st.markdown(user_prompt)
+      context_messages = build_context_messages(
+        st.session_state["system_prompt"],
+        memory_summary,
+        memory_hits,
+        st.session_state["messages"][:-1][-8:],
+        user_prompt,
+      )
 
-        with st.chat_message("assistant"):
-            try:
-                assistant_response = st.write_stream(
-                    stream_openrouter_response(
-                        client=client,
-                        messages=context_messages,
-                        model=model.strip(),
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                        top_p=top_p,
-                    )
-                )
-                if isinstance(assistant_response, str):
-                    assistant_text = assistant_response
-                elif assistant_response is None:
-                    assistant_text = ""
-                else:
-                    assistant_text = "".join(str(part) for part in assistant_response)
-            except OpenAIError as exc:
-                st.error(f"OpenRouter request failed: {exc}")
-                st.stop()
+      # Render the user message (already appended to history) and stream the assistant response
+      with st.chat_message("user"):
+        st.markdown(user_prompt)
 
-        st.session_state["messages"].append({"role": "assistant", "content": assistant_text})
-        turn_index = len(st.session_state["messages"]) - 1
-        if memory_store is not None:
-            memory_store.add_message(st.session_state["session_id"], "user", user_prompt, turn_index - 1)
-            memory_store.add_message(st.session_state["session_id"], "assistant", assistant_text, turn_index)
+      with st.chat_message("assistant"):
+        placeholder = st.empty()
+        assistant_text = ""
+        try:
+          for delta in stream_openrouter_response(
+            client=client, messages=context_messages, model=model.strip(), temperature=temperature, max_tokens=max_tokens, top_p=top_p
+          ):
+            assistant_text += str(delta)
+            # progressively update assistant content
+            placeholder.markdown(assistant_text)
+        except OpenAIError as exc:
+          st.error(f"OpenRouter request failed: {exc}")
+          st.stop()
 
-            if user_turn_count == 1 or user_turn_count % 3 == 0:
-                try:
-                    refreshed_summary = refresh_summary(
-                        client=client,
-                        model=model.strip(),
-                        existing_summary=memory_summary,
-                        recent_messages=st.session_state["messages"][-8:],
-                    )
-                except OpenAIError as exc:
-                    st.warning(f"Memory summary update skipped: {exc}")
-                else:
-                    if refreshed_summary:
-                        st.session_state["memory_summary"] = refreshed_summary
-                        memory_store.store_summary(st.session_state["session_id"], refreshed_summary)
-                        st.session_state["summary_refreshes"] += 1
+      # Save the assistant's final text into the session history
+      st.session_state["messages"].append({"role": "assistant", "content": assistant_text})
 
-            with st.expander("Retrieved memory", expanded=False):
-                st.markdown(format_memory_hits(memory_hits))
+      if memory_store is not None:
+        user_turn_count = sum(1 for msg in st.session_state["messages"] if msg["role"] == "user")
+        memory_store.add_message(st.session_state["session_id"], "user", user_prompt, user_turn_count - 1)
+        memory_store.add_message(st.session_state["session_id"], "assistant", assistant_text, user_turn_count)
+
+        if user_turn_count % 3 == 0:
+          try:
+            refreshed_summary = refresh_summary(
+              client=client,
+              model=model.strip(),
+              existing_summary=memory_summary,
+              recent_messages=st.session_state["messages"][-8:],
+            )
+            if refreshed_summary:
+              st.session_state["memory_summary"] = refreshed_summary
+              memory_store.store_summary(st.session_state["session_id"], refreshed_summary)
+          except OpenAIError:
+            pass
 
 
 if __name__ == "__main__":
