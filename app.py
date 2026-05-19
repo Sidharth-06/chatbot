@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from uuid import uuid4
 
@@ -185,6 +186,7 @@ def main() -> None:
     st.title(APP_TITLE)
     st.caption("Chat with OpenRouter models and keep durable memory in a local persistent store.")
     st.caption("Configuration is loaded from your environment variables or Streamlit secrets.")
+    st.caption(f"Python runtime: {sys.version.split()[0]}")
 
     top_controls = st.columns([1, 1, 1, 1])
     with top_controls[0]:
