@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 from uuid import uuid4
 
@@ -27,10 +26,17 @@ APP_TITLE = "OpenRouter Memory Chatbot"
 DEFAULT_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 DEFAULT_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 DEFAULT_MEMORY_DIR = os.getenv("MEMORY_PERSIST_DIR", ".chat_memory")
+DEFAULT_MEMORY_LIMIT = int(os.getenv("MEMORY_LIMIT", "5"))
+DEFAULT_RECENT_TURNS = int(os.getenv("RECENT_TURNS", "4"))
+DEFAULT_TEMPERATURE = float(os.getenv("OPENROUTER_TEMPERATURE", "0.5"))
+DEFAULT_TOP_P = float(os.getenv("OPENROUTER_TOP_P", "1.0"))
+DEFAULT_MAX_TOKENS = int(os.getenv("OPENROUTER_MAX_TOKENS", "1024"))
+DEFAULT_SESSION_ONLY_MEMORY = os.getenv("MEMORY_SESSION_ONLY", "false").lower() in {"1", "true", "yes"}
 DEFAULT_SYSTEM_PROMPT = (
     "You are a helpful chatbot. Use relevant long-term memory when it helps answer the user. "
     "Prefer concise answers, ask clarifying questions when needed, and do not invent facts from memory."
 )
+DEFAULT_SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT)
 
 
 st.set_page_config(page_title=APP_TITLE, page_icon="", layout="wide")
@@ -47,11 +53,41 @@ st.markdown(
         color: #e8eef7;
       }
       .block-container {
-        padding-top: 1.2rem !important;
-        max-width: 1240px;
-      }
-      div[data-testid="stChatMessage"] {
-        border-radius: 18px;
+                padding-top: 1.4rem !important;
+                max-width: 1040px;
+            }
+            [data-testid="stChatMessage"] {
+                margin-bottom: 0.35rem;
+            }
+            [data-testid="stChatMessage"] > div {
+                border-radius: 22px;
+                background: rgba(15, 23, 42, 0.68);
+                border: 1px solid rgba(148, 163, 184, 0.12);
+                box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+            }
+            [data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] p {
+                font-size: 1.02rem;
+                line-height: 1.65;
+            }
+            div[data-testid="stChatInput"] {
+                background: rgba(15, 23, 42, 0.72);
+                border: 1px solid rgba(148, 163, 184, 0.16);
+                border-radius: 24px;
+                padding: 0.15rem;
+                box-shadow: 0 20px 50px rgba(0, 0, 0, 0.22);
+            }
+            div[data-testid="stChatInput"] textarea {
+                color: #eef4ff !important;
+            }
+            .stButton button {
+                border-radius: 999px;
+                border: 1px solid rgba(148, 163, 184, 0.2);
+                background: rgba(15, 23, 42, 0.72);
+                color: #eef4ff;
+            }
+            .stButton button:hover {
+                border-color: rgba(56, 189, 248, 0.45);
+                color: #ffffff;
       }
     </style>
     """,
@@ -86,6 +122,33 @@ def secret_or_env(section: str, key: str, env_key: str, default: str = "") -> st
 
 def is_streamlit_cloud() -> bool:
     return os.getenv("STREAMLIT_CLOUD", "").lower() in {"1", "true", "yes"}
+
+
+def env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+def env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def init_state() -> None:
@@ -186,41 +249,23 @@ def main() -> None:
     base_url = secret_or_env("openrouter", "base_url", "OPENROUTER_BASE_URL", DEFAULT_BASE_URL)
     model = secret_or_env("openrouter", "model", "OPENROUTER_MODEL", DEFAULT_MODEL)
     memory_dir = secret_or_env("memory", "persist_dir", "MEMORY_PERSIST_DIR", DEFAULT_MEMORY_DIR)
+    memory_limit = env_int("MEMORY_LIMIT", DEFAULT_MEMORY_LIMIT)
+    recent_turns = env_int("RECENT_TURNS", DEFAULT_RECENT_TURNS)
+    temperature = env_float("OPENROUTER_TEMPERATURE", DEFAULT_TEMPERATURE)
+    top_p = env_float("OPENROUTER_TOP_P", DEFAULT_TOP_P)
+    max_tokens = env_int("OPENROUTER_MAX_TOKENS", DEFAULT_MAX_TOKENS)
+    session_only_memory = env_bool("MEMORY_SESSION_ONLY", DEFAULT_SESSION_ONLY_MEMORY)
 
     st.title(APP_TITLE)
-    st.caption("Chat with OpenRouter models and keep durable memory in a local persistent store.")
-    st.caption("Configuration is loaded from your environment variables or Streamlit secrets.")
-    st.caption(f"Python runtime: {sys.version.split()[0]}")
+    st.caption("A clean OpenRouter chat interface with durable memory, configured from environment or Streamlit Secrets.")
 
-    top_controls = st.columns([1, 1, 1, 1])
-    with top_controls[0]:
-        memory_limit = st.slider("Memory hits", min_value=1, max_value=10, value=5, step=1)
-    with top_controls[1]:
-        recent_turns = st.slider("Recent turns", min_value=1, max_value=12, value=4, step=1)
-    with top_controls[2]:
-        temperature = st.slider("Temperature", min_value=0.0, max_value=1.5, value=0.5, step=0.1)
-    with top_controls[3]:
-        top_p = st.slider("Top-p", min_value=0.1, max_value=1.0, value=1.0, step=0.1)
-
-    bottom_controls = st.columns([1, 1, 2])
-    with bottom_controls[0]:
-        max_tokens = st.slider("Max tokens", min_value=128, max_value=4096, value=1024, step=64)
-    with bottom_controls[1]:
-        session_only_memory = st.checkbox("Limit memory lookup to this session", value=False)
-    with bottom_controls[2]:
-        if st.button("Clear chat"):
+    header_cols = st.columns([7, 1])
+    with header_cols[1]:
+        if st.button("Clear chat", use_container_width=True):
             st.session_state["messages"] = []
             st.session_state["memory_summary"] = ""
             st.session_state["summary_refreshes"] = 0
             st.rerun()
-
-    with st.expander("System prompt", expanded=False):
-        st.session_state["system_prompt"] = st.text_area(
-            "Assistant instructions",
-            value=st.session_state["system_prompt"],
-            height=180,
-            label_visibility="collapsed",
-        )
 
     env_path = APP_DIR / ".env"
     if not api_key_is_configured(api_key):
@@ -257,9 +302,6 @@ model = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free""",
             "Long-term memory is disabled for this session. "
             f"Chat still works, but past messages will not be stored or retrieved. ({exc})"
         )
-
-    if memory_store is not None:
-        st.caption(f"Memory items stored: {memory_store.count():,}")
 
     if not st.session_state["messages"]:
         st.info("Ask a question below to start chatting.")
@@ -336,9 +378,6 @@ model = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free""",
                         st.session_state["memory_summary"] = refreshed_summary
                         memory_store.store_summary(st.session_state["session_id"], refreshed_summary)
                         st.session_state["summary_refreshes"] += 1
-
-            with st.expander("Retrieved memory", expanded=False):
-                st.markdown(format_memory_hits(memory_hits))
 
 
 if __name__ == "__main__":
