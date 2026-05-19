@@ -130,12 +130,9 @@ st.markdown(
         padding: 2rem;
       }
 
-      /* Input Area */
+      /* Input Area (hide Streamlit default chat input; we provide a custom input) */
       [data-testid="stChatInputContainer"] {
-        background: transparent !important;
-        border-top: none !important;
-        padding: 1.5rem 2rem 2rem !important;
-        flex-shrink: 0;
+        display: none !important;
       }
 
       [data-testid="stChatInputContainer"] textarea {
