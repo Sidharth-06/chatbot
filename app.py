@@ -52,17 +52,10 @@ st.markdown(
       div[data-testid="stChatMessage"] {
         border-radius: 18px;
       }
-      div[data-testid="stSidebar"] {
-        border-right: 1px solid rgba(148, 163, 184, 0.18);
-      }
     </style>
     """,
     unsafe_allow_html=True,
 )
-
-
-def is_streamlit_cloud() -> bool:
-    return os.getenv("STREAMLIT_CLOUD", "").lower() in {"1", "true", "yes"}
 
 
 def secret_or_env(section: str, key: str, env_key: str, default: str = "") -> str:
@@ -185,46 +178,43 @@ def main() -> None:
     init_state()
 
     api_key = secret_or_env("openrouter", "api_key", "OPENROUTER_API_KEY")
-    base_url_default = secret_or_env("openrouter", "base_url", "OPENROUTER_BASE_URL", DEFAULT_BASE_URL)
-    model_default = secret_or_env("openrouter", "model", "OPENROUTER_MODEL", DEFAULT_MODEL)
-    memory_dir_default = secret_or_env("memory", "persist_dir", "MEMORY_PERSIST_DIR", DEFAULT_MEMORY_DIR)
+    base_url = secret_or_env("openrouter", "base_url", "OPENROUTER_BASE_URL", DEFAULT_BASE_URL)
+    model = secret_or_env("openrouter", "model", "OPENROUTER_MODEL", DEFAULT_MODEL)
+    memory_dir = secret_or_env("memory", "persist_dir", "MEMORY_PERSIST_DIR", DEFAULT_MEMORY_DIR)
 
     st.title(APP_TITLE)
     st.caption("Chat with OpenRouter models and keep durable memory in a local persistent store.")
+    st.caption("Configuration is loaded from your environment variables or Streamlit secrets.")
 
-    with st.sidebar:
-        st.header("Connection")
-        st.caption("OpenRouter credentials are loaded from your environment or Streamlit secrets.")
-        base_url = st.text_input("OpenRouter base URL", value=base_url_default)
-        model = st.text_input("Model", value=model_default)
-
-        st.divider()
-        st.header("Memory")
-        memory_dir = st.text_input("Memory storage path", value=memory_dir_default)
+    top_controls = st.columns([1, 1, 1, 1])
+    with top_controls[0]:
         memory_limit = st.slider("Memory hits", min_value=1, max_value=10, value=5, step=1)
+    with top_controls[1]:
         recent_turns = st.slider("Recent turns", min_value=1, max_value=12, value=4, step=1)
-        session_only_memory = st.checkbox("Limit memory lookup to this session", value=False)
-        st.caption(f"Session ID: {st.session_state['session_id'][:8]}")
-
-        st.divider()
-        st.header("Generation")
+    with top_controls[2]:
         temperature = st.slider("Temperature", min_value=0.0, max_value=1.5, value=0.5, step=0.1)
+    with top_controls[3]:
         top_p = st.slider("Top-p", min_value=0.1, max_value=1.0, value=1.0, step=0.1)
+
+    bottom_controls = st.columns([1, 1, 2])
+    with bottom_controls[0]:
         max_tokens = st.slider("Max tokens", min_value=128, max_value=4096, value=1024, step=64)
-
-        with st.expander("System prompt", expanded=False):
-            st.session_state["system_prompt"] = st.text_area(
-                "Assistant instructions",
-                value=st.session_state["system_prompt"],
-                height=180,
-                label_visibility="collapsed",
-            )
-
+    with bottom_controls[1]:
+        session_only_memory = st.checkbox("Limit memory lookup to this session", value=False)
+    with bottom_controls[2]:
         if st.button("Clear chat"):
             st.session_state["messages"] = []
             st.session_state["memory_summary"] = ""
             st.session_state["summary_refreshes"] = 0
             st.rerun()
+
+    with st.expander("System prompt", expanded=False):
+        st.session_state["system_prompt"] = st.text_area(
+            "Assistant instructions",
+            value=st.session_state["system_prompt"],
+            height=180,
+            label_visibility="collapsed",
+        )
 
     env_path = APP_DIR / ".env"
     if not api_key_is_configured(api_key):
@@ -250,7 +240,7 @@ def main() -> None:
         )
 
     if memory_store is not None:
-        st.sidebar.caption(f"Memory items stored: {memory_store.count():,}")
+        st.caption(f"Memory items stored: {memory_store.count():,}")
 
     if not st.session_state["messages"]:
         st.info("Ask a question below to start chatting.")
