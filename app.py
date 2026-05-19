@@ -244,6 +244,7 @@ def init_state() -> None:
     st.session_state.setdefault("messages", [])
     st.session_state.setdefault("memory_summary", "")
     st.session_state.setdefault("system_prompt", DEFAULT_SYSTEM_PROMPT)
+  st.session_state.setdefault("ui_input", "")
 
 
 @st.cache_resource(show_spinner="Loading memory store...")
@@ -381,15 +382,11 @@ model = "openai/gpt-4o-mini""",
     render_chat_history(st.session_state["messages"])
 
     # Replace the standard `st.chat_input` with a styled text area + suggestion buttons
-    if "ui_input" not in st.session_state:
-      st.session_state["ui_input"] = ""
-
     left_col, right_col = st.columns([3, 1], gap="small")
 
     with left_col:
-      st.session_state["ui_input"] = st.text_area(
+      st.text_area(
         "",
-        value=st.session_state.get("ui_input", ""),
         placeholder="Ask our AI anything about projects, plans, or code...",
         height=96,
         key="ui_input",
