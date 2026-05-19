@@ -1,4 +1,4 @@
-# OpenRouter Memory Chatbot
+# Chatbot
 
 A Streamlit chatbot that uses the OpenRouter API for chat completions and a persistent local store for long-term memory.
 
