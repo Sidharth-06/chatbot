@@ -1,6 +1,6 @@
 # OpenRouter Memory Chatbot
 
-A Streamlit chatbot that uses the OpenRouter API for chat completions and a persistent vector store for long-term memory.
+A Streamlit chatbot that uses the OpenRouter API for chat completions and a persistent local store for long-term memory.
 
 ## Features
 
@@ -16,7 +16,7 @@ A Streamlit chatbot that uses the OpenRouter API for chat completions and a pers
 ## Setup
 
 ```powershell
-py -3.10 -m pip install -r requirements.txt
+py -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
@@ -30,9 +30,7 @@ streamlit run app.py
 
 ## Memory storage
 
-The app stores vector data in `.chat_memory/` by default. It keeps raw turns plus a rolling summary so the model can retrieve relevant context later.
-
-By default it uses Chroma's built-in `chroma-default` embeddings (lightweight). Set `MEMORY_EMBEDDING_MODEL=all-MiniLM-L6-v2` only if you have enough RAM and have installed `sentence-transformers`.
+The app stores chat turns and summaries in `.chat_memory/` by default. It keeps raw turns plus a rolling summary so the model can retrieve relevant context later.
 
 ## Optional secrets.toml (local)
 
@@ -75,12 +73,10 @@ model = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
 
 [memory]
 persist_dir = ".chat_memory"
-embedding_model = "chroma-default"
 ```
 
 ### Notes for Cloud
 
 - **API key**: Set only in Streamlit Cloud **Secrets**, not in `.env`.
 - **Memory**: Vector data on Cloud is **ephemeral** (resets when the app restarts or redeploys). Chat in the current session still works.
-- **Embeddings**: Cloud uses `chroma-default` only (no heavy PyTorch model).
 - After changing secrets, use **Manage app → Reboot app** in the Cloud dashboard.

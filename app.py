@@ -26,12 +26,10 @@ APP_TITLE = "OpenRouter Memory Chatbot"
 DEFAULT_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 DEFAULT_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 DEFAULT_MEMORY_DIR = os.getenv("MEMORY_PERSIST_DIR", ".chat_memory")
-DEFAULT_EMBEDDING_MODEL = os.getenv("MEMORY_EMBEDDING_MODEL", "chroma-default")
 DEFAULT_SYSTEM_PROMPT = (
     "You are a helpful chatbot. Use relevant long-term memory when it helps answer the user. "
     "Prefer concise answers, ask clarifying questions when needed, and do not invent facts from memory."
 )
-EMBEDDING_CHOICES = ("chroma-default", "all-MiniLM-L6-v2")
 
 
 st.set_page_config(page_title=APP_TITLE, page_icon="", layout="wide")
@@ -99,15 +97,10 @@ def init_state() -> None:
     st.session_state.setdefault("summary_refreshes", 0)
     st.session_state.setdefault("system_prompt", DEFAULT_SYSTEM_PROMPT)
 
-    env_embedding = os.getenv("MEMORY_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
-    if is_streamlit_cloud() or env_embedding not in EMBEDDING_CHOICES:
-        env_embedding = "chroma-default"
-    st.session_state.setdefault("embedding_model_select", env_embedding)
-
 
 @st.cache_resource(show_spinner="Loading memory store...")
-def get_memory_store(persist_dir: str, embedding_model: str) -> PersistentMemoryStore:
-    return PersistentMemoryStore(persist_dir=persist_dir, embedding_model=embedding_model)
+def get_memory_store(persist_dir: str) -> PersistentMemoryStore:
+    return PersistentMemoryStore(persist_dir=persist_dir)
 
 
 def api_key_is_configured(api_key: str) -> bool:
@@ -195,15 +188,9 @@ def main() -> None:
     base_url_default = secret_or_env("openrouter", "base_url", "OPENROUTER_BASE_URL", DEFAULT_BASE_URL)
     model_default = secret_or_env("openrouter", "model", "OPENROUTER_MODEL", DEFAULT_MODEL)
     memory_dir_default = secret_or_env("memory", "persist_dir", "MEMORY_PERSIST_DIR", DEFAULT_MEMORY_DIR)
-    embedding_model_default = secret_or_env(
-        "memory",
-        "embedding_model",
-        "MEMORY_EMBEDDING_MODEL",
-        DEFAULT_EMBEDDING_MODEL,
-    )
 
     st.title(APP_TITLE)
-    st.caption("Chat with OpenRouter models and keep durable memory in a local persistent vector store.")
+    st.caption("Chat with OpenRouter models and keep durable memory in a local persistent store.")
 
     with st.sidebar:
         st.header("Connection")
@@ -213,16 +200,7 @@ def main() -> None:
 
         st.divider()
         st.header("Memory")
-        memory_dir = st.text_input("Vector store path", value=memory_dir_default)
-        embedding_choices = ("chroma-default",) if is_streamlit_cloud() else EMBEDDING_CHOICES
-        if is_streamlit_cloud():
-            st.caption("Cloud deploy uses lightweight `chroma-default` embeddings only.")
-        embedding_model = st.selectbox(
-            "Embedding model",
-            options=embedding_choices,
-            key="embedding_model_select",
-            help="chroma-default is lightweight. all-MiniLM-L6-v2 downloads PyTorch and needs more RAM.",
-        )
+        memory_dir = st.text_input("Memory storage path", value=memory_dir_default)
         memory_limit = st.slider("Memory hits", min_value=1, max_value=10, value=5, step=1)
         recent_turns = st.slider("Recent turns", min_value=1, max_value=12, value=4, step=1)
         session_only_memory = st.checkbox("Limit memory lookup to this session", value=False)
@@ -264,7 +242,7 @@ def main() -> None:
 
     memory_store: PersistentMemoryStore | None = None
     try:
-        memory_store = get_memory_store(memory_dir, embedding_model)
+        memory_store = get_memory_store(memory_dir)
     except Exception as exc:
         st.warning(
             "Long-term memory is disabled for this session. "

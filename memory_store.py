@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
+
+
+_WORD_RE = re.compile(r"[a-z0-9]+")
+_STORE_FILENAME = "memory_store.json"
 
 
 def _utc_now() -> str:
@@ -26,65 +32,80 @@ class MemoryHit:
     distance: Optional[float] = None
 
 
-def _build_embedding_function(embedding_model: str):
-    import chromadb
-    from chromadb.utils import embedding_functions as embedding_functions
+def _tokenize(text: str) -> set[str]:
+    return {match.group(0) for match in _WORD_RE.finditer(text.lower())}
 
-    model = embedding_model.strip()
-    if model in {"chroma-default", "default", "onnx"}:
-        return embedding_functions.DefaultEmbeddingFunction()
+
+def _score_document(query_tokens: set[str], document: str, metadata: dict[str, Any]) -> float:
+    if not query_tokens:
+        return 0.0
+
+    document_tokens = _tokenize(document)
+    overlap = len(query_tokens & document_tokens)
+    if not overlap:
+        return 0.0
+
+    score = overlap / len(query_tokens)
+    kind = str(metadata.get("kind", "message"))
+    if kind == "summary":
+        score *= 0.85
+
+    turn_index = metadata.get("turn_index")
+    if isinstance(turn_index, int) and turn_index >= 0:
+        score += min(turn_index, 1000) / 10000.0
+
+    return score
+
+
+def _read_store(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"version": 1, "messages": [], "summaries": {}}
 
     try:
-        from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
-    except ImportError as exc:
-        raise RuntimeError(
-            "sentence-transformers is required for custom embedding models. "
-            "Set MEMORY_EMBEDDING_MODEL=chroma-default or install sentence-transformers."
-        ) from exc
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"version": 1, "messages": [], "summaries": {}}
 
-    return SentenceTransformerEmbeddingFunction(model_name=model)
+    if not isinstance(data, dict):
+        return {"version": 1, "messages": [], "summaries": {}}
+
+    data.setdefault("version", 1)
+    data.setdefault("messages", [])
+    data.setdefault("summaries", {})
+    if not isinstance(data["messages"], list):
+        data["messages"] = []
+    if not isinstance(data["summaries"], dict):
+        data["summaries"] = {}
+    return data
 
 
-def _collection_name(embedding_model: str) -> str:
-    model = embedding_model.strip()
-    if model in {"chroma-default", "default", "onnx"}:
-        return "chatbot_memory_light"
-    safe = model.replace("/", "_").replace(":", "_")
-    return f"chatbot_memory_{safe}"[:63]
+def _write_store(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    temp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    temp_path.replace(path)
 
 
 class PersistentMemoryStore:
     def __init__(self, persist_dir: str | Path, embedding_model: str = "chroma-default") -> None:
-        try:
-            import chromadb
-        except ImportError as exc:  # pragma: no cover - surfaced in the UI
-            raise RuntimeError(
-                "ChromaDB is required for memory storage. Install the project dependencies first."
-            ) from exc
-
         self.persist_dir = Path(persist_dir)
         self.persist_dir.mkdir(parents=True, exist_ok=True)
-        self._client = chromadb.PersistentClient(path=str(self.persist_dir))
-        self._embedder = _build_embedding_function(embedding_model)
-        self._collection = self._client.get_or_create_collection(
-            name=_collection_name(embedding_model),
-            embedding_function=self._embedder,
-            metadata={"hnsw:space": "cosine", "embedding_model": embedding_model.strip()},
-        )
+        self._store_path = self.persist_dir / _STORE_FILENAME
+        self._data = _read_store(self._store_path)
+        self._embedding_model = embedding_model.strip()
 
     def _store(self, item_id: str, document: str, metadata: dict[str, Any]) -> None:
-        payload = {
-            "ids": [item_id],
-            "documents": [document],
-            "metadatas": [metadata],
+        record = {
+            "id": item_id,
+            "document": document,
+            "metadata": metadata,
         }
 
-        if hasattr(self._collection, "upsert"):
-            self._collection.upsert(**payload)
-            return
-
-        self._collection.delete(ids=[item_id])
-        self._collection.add(**payload)
+        messages = self._data.setdefault("messages", [])
+        messages = [existing for existing in messages if existing.get("id") != item_id]
+        messages.append(record)
+        self._data["messages"] = messages
+        _write_store(self._store_path, self._data)
 
     def add_message(
         self,
@@ -113,14 +134,22 @@ class PersistentMemoryStore:
             "kind": "summary",
             "created_at": _utc_now(),
         }
-        self._store(item_id, summary, metadata)
+        summaries = self._data.setdefault("summaries", {})
+        summaries[session_id] = {
+            "id": item_id,
+            "document": summary,
+            "metadata": metadata,
+        }
+        self._data["summaries"] = summaries
+        _write_store(self._store_path, self._data)
         return item_id
 
     def load_summary(self, session_id: str) -> str:
-        result = self._collection.get(ids=[self._summary_id(session_id)], include=["documents"])
-        documents = result.get("documents") or []
-        if documents and documents[0]:
-            return str(documents[0][0])
+        summaries = self._data.get("summaries", {})
+        summary = summaries.get(session_id, {})
+        document = summary.get("document")
+        if document:
+            return str(document)
         return ""
 
     def search(
@@ -133,29 +162,35 @@ class PersistentMemoryStore:
         if not cleaned_query:
             return []
 
-        where = {"session_id": session_id} if session_id else None
-        result = self._collection.query(
-            query_texts=[cleaned_query],
-            n_results=limit,
-            where=where,
-            include=["documents", "metadatas", "distances"],
-        )
-
-        documents = (result.get("documents") or [[]])[0]
-        metadatas = (result.get("metadatas") or [[]])[0]
-        ids = (result.get("ids") or [[]])[0]
-        distances = (result.get("distances") or [[]])[0]
-
+        query_tokens = _tokenize(cleaned_query)
         hits: list[MemoryHit] = []
-        for index, document in enumerate(documents):
-            metadata = metadatas[index] if index < len(metadatas) else {}
-            distance = distances[index] if index < len(distances) else None
-            hit_id = ids[index] if index < len(ids) else f"hit-{index}"
-            hits.append(MemoryHit(id=str(hit_id), document=str(document), metadata=dict(metadata), distance=distance))
+        for record in self._data.get("messages", []):
+            if not isinstance(record, dict):
+                continue
+
+            metadata = dict(record.get("metadata", {}))
+            if session_id and metadata.get("session_id") != session_id:
+                continue
+
+            document = str(record.get("document", ""))
+            score = _score_document(query_tokens, document, metadata)
+            if score <= 0:
+                continue
+
+            hits.append(
+                MemoryHit(
+                    id=str(record.get("id", f"hit-{len(hits)}")),
+                    document=document,
+                    metadata=metadata,
+                    distance=1.0 - min(score, 1.0),
+                )
+            )
+
+        hits.sort(key=lambda hit: (hit.distance if hit.distance is not None else 1.0, hit.metadata.get("turn_index", 0)))
         return hits
 
     def count(self) -> int:
-        return int(self._collection.count())
+        return len(self._data.get("messages", [])) + len(self._data.get("summaries", {}))
 
     @staticmethod
     def _summary_id(session_id: str) -> str:
